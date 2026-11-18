@@ -53,10 +53,35 @@ class RuntimePaths(
         downloads.mkdirs()
         prootTmp.mkdirs()
         fakeProc.mkdirs()
-        projectsDir.mkdirs()
     }
 
-    fun installed(): Boolean = stateFile.exists() && rootfs.exists()
+    fun rootfsExtracted(): Boolean {
+        val sh = File(rootfs, "bin/sh")
+        val busybox = File(rootfs, "bin/busybox")
+        return busybox.exists() ||
+            sh.exists() ||
+            java.nio.file.Files.isSymbolicLink(sh.toPath())
+    }
+
+    fun installed(): Boolean = stateFile.exists() && rootfsExtracted()
+
+    /** Reads the installed OpenCode version recorded in runtime-state.json, if present. */
+    fun installedOpencodeVersion(): String? {
+        if (!stateFile.exists()) return null
+        return try {
+            val elem = kotlinx.serialization.json.Json.parseToJsonElement(stateFile.readText())
+            val obj = elem as? kotlinx.serialization.json.JsonObject ?: return null
+            (obj["opencodeVersion"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** True if the runtime is installed but its OpenCode version differs from [targetVersion]. */
+    fun needsOpencodeUpgrade(targetVersion: String?): Boolean {
+        if (targetVersion == null || !installed()) return false
+        return installedOpencodeVersion() != targetVersion
+    }
 
     fun wipe() {
         rootfsStaging.deleteRecursively()

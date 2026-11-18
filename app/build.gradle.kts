@@ -31,7 +31,7 @@ android {
             jniLibs.srcDir(layout.buildDirectory.dir("generated/pocketboxJniLibs"))
         }
     }
-    val copyProot = tasks.register<Copy>("copyProotBinaries") {
+    val copyProot = tasks.register<Sync>("copyProotBinaries") {
         group = "build"
         description = "Copies the built PRoot binaries into jniLibs"
         for (abi in listOf("arm64-v8a", "x86_64")) {

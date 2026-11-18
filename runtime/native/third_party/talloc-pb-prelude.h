@@ -22,6 +22,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#ifdef _GNU_SOURCE
+#undef _GNU_SOURCE
+#endif
+#define _GNU_SOURCE 1
+
 #ifndef _PUBLIC_
 #define _PUBLIC_ __attribute__((visibility("default")))
 #endif

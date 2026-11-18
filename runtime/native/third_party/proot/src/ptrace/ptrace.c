@@ -303,6 +303,9 @@ int translate_ptrace_exit(Tracee *tracee)
 	/* Fall through.  */
     case PTRACE_PEEKTEXT:
     case PTRACE_PEEKDATA:
+#if defined(ARCH_ARM64)
+	address &= 0x00FFFFFFFFFFFFFFULL;
+#endif
 	errno = 0;
 	result = (word_t) ptrace(request, pid, address, NULL);
 	if (errno != 0)
@@ -329,6 +332,9 @@ int translate_ptrace_exit(Tracee *tracee)
 
     case PTRACE_POKETEXT:
     case PTRACE_POKEDATA:
+#if defined(ARCH_ARM64)
+	address &= 0x00FFFFFFFFFFFFFFULL;
+#endif
 	if (is_32on64_mode(ptracer)) {
 	    word_t tmp;
 

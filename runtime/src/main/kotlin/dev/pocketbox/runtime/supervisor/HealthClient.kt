@@ -33,8 +33,8 @@ class HealthClient(private val username: String, private val password: String) {
     fun check(host: String, port: Int): Health {
         val auth = Credentials.basic(username, password)
         detected.get()?.let { return checkWith(it, host, port, auth) }
-        // Probe in order: v1 first (release track), then v2.
-        for (p in listOf(Protocol.V1, Protocol.V2)) {
+        // Probe in order: v2 first (/api/info), then v1 (/global/health).
+        for (p in listOf(Protocol.V2, Protocol.V1)) {
             val h = checkWith(p, host, port, auth)
             if (h.healthy) {
                 detected.set(p)
@@ -57,21 +57,21 @@ class HealthClient(private val username: String, private val password: String) {
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return Health(false, null, null)
                 val body = resp.body?.string() ?: return Health(false, null, null)
-                parseHealth(body)
+                parseHealth(body, p)
             }
         } catch (_: Exception) {
             Health(false, null, null)
         }
     }
 
-    private fun parseHealth(body: String): Health {
+    private fun parseHealth(body: String, protocol: Protocol? = null): Health {
         return try {
             val json = kotlinx.serialization.json.Json.parseToJsonElement(body)
             val obj = json as kotlinx.serialization.json.JsonObject
             val version = (obj["version"] as? kotlinx.serialization.json.JsonPrimitive)?.content
             val healthy = (obj["healthy"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toBooleanStrict()
                 ?: true // /api/info has no "healthy" flag; a 200 means healthy
-            Health(healthy, version, null)
+            Health(healthy, version, protocol)
         } catch (_: Exception) {
             Health(false, null, null)
         }

@@ -55,43 +55,55 @@ class Installer(
         paths.ensureDirs()
         emit(InstallEvent.StepChanged(InstallStep.PREFLIGHT, 0, steps.size))
 
+        val alpine = entry.alpine
+        val opencode = entry.opencode
+        val currentOcVersion = paths.installedOpencodeVersion()
+
         // ---- 1. Preflight ----
-        if (paths.installed()) {
-            emit(InstallEvent.Log("Runtime already installed"))
+        if (paths.installed() && currentOcVersion == opencode.version) {
+            emit(InstallEvent.Log("Runtime already installed (OpenCode ${opencode.version})"))
             emit(InstallEvent.Completed)
             return@flow
         }
+        val isUpgrade = paths.rootfsExtracted()
+        val minFreeBytes = if (isUpgrade) 300L shl 20 else 1L shl 30
         val freeBytes = paths.filesDir.usableSpace
-        if (freeBytes < 1L shl 30) {
+        if (freeBytes < minFreeBytes) {
             throw InstallException(
-                "Not enough free space: ${freeBytes / (1 shl 20)} MB available, need at least 1 GB"
+                "Not enough free space: ${freeBytes / (1 shl 20)} MB available, need at least ${minFreeBytes / (1 shl 20)} MB"
             )
         }
-        if (freeBytes < 2L shl 30) {
+        if (!isUpgrade && freeBytes < 2L shl 30) {
             emit(InstallEvent.Log("Warning: low storage (${freeBytes / (1 shl 20)} MB free, recommend >= 2 GB)"))
         }
         if (wifiOnly() && onMetered()) {
             throw InstallException("Wi-Fi only is enabled but the network is metered")
         }
-        emit(InstallEvent.Log("Preflight OK: ${freeBytes / (1 shl 20)} MB free, ABI $abi"))
-
-        val alpine = entry.alpine
-        val opencode = entry.opencode
+        if (isUpgrade && currentOcVersion != null && currentOcVersion != opencode.version) {
+            emit(InstallEvent.Log("Upgrading OpenCode from $currentOcVersion to ${opencode.version} (ABI $abi)"))
+        } else {
+            emit(InstallEvent.Log("Preflight OK: ${freeBytes / (1 shl 20)} MB free, ABI $abi"))
+        }
 
         // ---- 2. Downloads (resumable, checksum-verified) ----
         emit(InstallEvent.StepChanged(InstallStep.DOWNLOAD_ALPINE, 1, steps.size))
-        val alpineFile = downloadWithResume(alpine, "alpine-minirootfs-${alpine.version}.tar.gz")
+        val alpineFile = if (!paths.rootfsExtracted()) {
+            downloadWithResume(alpine, "alpine-minirootfs-${alpine.version}.tar.gz")
+        } else {
+            null
+        }
 
         emit(InstallEvent.StepChanged(InstallStep.DOWNLOAD_OPENCODE, 2, steps.size))
         val opencodeFile = downloadWithResume(opencode, "opencode-${opencode.version}.tar.gz")
 
         // ---- 3. Extract rootfs to staging, atomic rename ----
         emit(InstallEvent.StepChanged(InstallStep.EXTRACT_ROOTFS, 3, steps.size))
-        if (!paths.rootfs.exists()) {
+        if (!paths.rootfsExtracted()) {
+            val archive = alpineFile ?: throw InstallException("Alpine archive missing")
             paths.rootfsStaging.deleteRecursively()
             paths.rootfsStaging.mkdirs()
-            emit(InstallEvent.Log("Extracting ${alpineFile.name} ..."))
-            TarExtractor.extractTarGz(alpineFile, paths.rootfsStaging)
+            emit(InstallEvent.Log("Extracting ${archive.name} ..."))
+            TarExtractor.extractTarGz(archive, paths.rootfsStaging)
             paths.rootfs.deleteRecursively()
             if (!paths.rootfsStaging.renameTo(paths.rootfs)) {
                 throw InstallException("Could not move staging rootfs into place")
@@ -109,7 +121,7 @@ class Installer(
 
         // ---- 6. OpenCode binary ----
         emit(InstallEvent.StepChanged(InstallStep.INSTALL_OPENCODE, 6, steps.size))
-        installOpenCode(opencodeFile)
+        installOpenCode(opencodeFile, opencode.version, currentOcVersion)
 
         // ---- 7. Defaults (credentials are written by the app layer) ----
         emit(InstallEvent.StepChanged(InstallStep.WRITE_DEFAULTS, 7, steps.size))
@@ -126,7 +138,7 @@ class Installer(
         }
         paths.stateFile.writeText(Json.encodeToString(JsonObject.serializer(), state))
 
-        alpineFile.delete()
+        alpineFile?.delete()
         opencodeFile.delete()
         emit(InstallEvent.Completed)
     }.flowOn(Dispatchers.IO)
@@ -262,16 +274,17 @@ class Installer(
         tmp.setWritable(true, false)
         tmp.setExecutable(true, false)
 
+        File(rootfs, "etc").mkdirs()
         val resolv = File(rootfs, "etc/resolv.conf")
         if (!resolv.exists() || resolv.length() == 0L) {
             resolv.writeText("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
         }
         val hosts = File(rootfs, "etc/hosts")
-        if (hosts.length() == 0L) {
+        if (!hosts.exists() || hosts.length() == 0L) {
             hosts.writeText("127.0.0.1 localhost\n::1 localhost\n")
         }
         val passwd = File(rootfs, "etc/passwd")
-        val content = passwd.readText()
+        val content = if (passwd.exists()) passwd.readText() else ""
         if (!content.contains("^root:".toRegex())) {
             passwd.writeText("root:x:0:0:root:/root:/bin/ash\n$content")
         }
@@ -322,11 +335,16 @@ class Installer(
     /** Install the OpenCode binary to /usr/local/bin/opencode and smoke-test it. */
     private suspend fun kotlinx.coroutines.flow.FlowCollector<InstallEvent>.installOpenCode(
         tarball: File,
+        targetVersion: String,
+        previousVersion: String?,
     ) {
         val binDir = File(paths.rootfs, "usr/local/bin")
         binDir.mkdirs()
         val binary = File(binDir, "opencode")
-        if (binary.exists() && binary.length() > 10_000_000) return
+        if (binary.exists() && binary.length() > 10_000_000 && previousVersion == targetVersion) return
+        if (binary.exists()) {
+            binary.delete()
+        }
 
         // The release tarball contains a single `opencode` binary.
         TarExtractor.extractTarGz(tarball, binDir)

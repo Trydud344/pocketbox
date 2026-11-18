@@ -99,16 +99,28 @@ class AppContainer(private val app: Application) {
 class CredentialsStore(context: Context) {
 
     private val prefs by lazy {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            "pb_credentials",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        fun createEncrypted(): android.content.SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                "pb_credentials",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
+        try {
+            createEncrypted()
+        } catch (_: Exception) {
+            try {
+                context.deleteSharedPreferences("pb_credentials")
+                createEncrypted()
+            } catch (_: Exception) {
+                context.getSharedPreferences("pb_credentials_fallback", Context.MODE_PRIVATE)
+            }
+        }
     }
 
     companion object {

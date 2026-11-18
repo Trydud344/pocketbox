@@ -41,6 +41,22 @@
 #include "build.h"		/* HAVE_PROCESS_VM,  */
 #include "cli/note.h"
 
+/* On ARM64 (Android 11+ Bionic TBI/MTE), heap pointers may carry a non-zero
+ * top byte tag (e.g. 0xb400007...). The kernel's ptrace(PTRACE_PEEKDATA /
+ * PTRACE_POKEDATA) and process_vm_readv/writev reject tagged addresses with
+ * EIO/EFAULT unless the top byte is cleared. */
+#if defined(ARCH_ARM64)
+static inline word_t untag_addr(word_t addr)
+{
+    return addr & 0x00FFFFFFFFFFFFFFULL;
+}
+#else
+static inline word_t untag_addr(word_t addr)
+{
+    return addr;
+}
+#endif
+
 /**
  * Load the word at the given @address, potentially *not* aligned.
  */
@@ -83,8 +99,8 @@ static inline void store_word(void *address, word_t value)
 int write_data(const Tracee *tracee, word_t dest_tracee,
 	       const void *src_tracer, word_t size)
 {
-    word_t *src = (word_t *) src_tracer;
-    word_t *dest = (word_t *) dest_tracee;
+    word_t *src = (word_t *) untag_addr((word_t) src_tracer);
+    word_t *dest = (word_t *) untag_addr(dest_tracee);
 
     long status;
     word_t word, i, j;
@@ -166,6 +182,8 @@ int writev_data(const Tracee *tracee, word_t dest_tracee,
     int status;
     int i;
 
+    dest_tracee = untag_addr(dest_tracee);
+
 #if defined(HAVE_PROCESS_VM)
     struct iovec remote;
 
@@ -204,8 +222,8 @@ int writev_data(const Tracee *tracee, word_t dest_tracee,
 int read_data(const Tracee *tracee, void *dest_tracer, word_t src_tracee,
 	      word_t size)
 {
-    word_t *src = (word_t *) src_tracee;
-    word_t *dest = (word_t *) dest_tracer;
+    word_t *src = (word_t *) untag_addr(src_tracee);
+    word_t *dest = (word_t *) untag_addr((word_t) dest_tracer);
 
     word_t nb_trailing_bytes;
     word_t nb_full_words;
@@ -278,6 +296,8 @@ int read_data(const Tracee *tracee, void *dest_tracer, word_t src_tracee,
 int read_string(const Tracee *tracee, char *dest_tracer, word_t src_tracee,
 		word_t max_size)
 {
+    src_tracee = untag_addr(src_tracee);
+    dest_tracer = (char *) untag_addr((word_t) dest_tracer);
     word_t *src = (word_t *) src_tracee;
     word_t *dest = (word_t *) dest_tracer;
 
@@ -411,6 +431,8 @@ word_t peek_word(const Tracee *tracee, word_t address)
 {
     word_t result = 0;
 
+    address = untag_addr(address);
+
 #if defined(HAVE_PROCESS_VM)
     int status;
     struct iovec local;
@@ -453,6 +475,8 @@ word_t peek_word(const Tracee *tracee, word_t address)
 void poke_word(const Tracee *tracee, word_t address, word_t value)
 {
     word_t tmp;
+
+    address = untag_addr(address);
 
 #if defined(HAVE_PROCESS_VM)
     int status;

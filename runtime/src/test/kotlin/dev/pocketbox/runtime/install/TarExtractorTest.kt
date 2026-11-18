@@ -87,4 +87,33 @@ class TarExtractorTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun testInstalledCheckHandlesAbsoluteGuestSymlinkForBinSh() {
+        val tempDir = Files.createTempDirectory("paths-test").toFile()
+        try {
+            val paths = RuntimePaths(File(tempDir, "files"), File(tempDir, "cache"))
+            paths.ensureDirs()
+            assertFalse(paths.installed())
+
+            // Simulate Alpine rootfs where bin/sh is an absolute guest symlink -> /bin/busybox
+            // (which does not exist at /bin/busybox on the Android host root)
+            val binDir = File(paths.rootfs, "bin")
+            binDir.mkdirs()
+            Files.createSymbolicLink(
+                File(binDir, "sh").toPath(),
+                java.nio.file.Paths.get("/nonexistent_android_host_path/bin/busybox"),
+            )
+            assertTrue("rootfsExtracted should detect symlinked bin/sh", paths.rootfsExtracted())
+            assertFalse("installed() must be false before stateFile is written", paths.installed())
+
+            paths.stateFile.writeText("""{"schema":1,"opencodeVersion":"1.19.6"}""")
+            assertTrue("installed() must be true once stateFile and rootfs exist", paths.installed())
+            assertEquals("1.19.6", paths.installedOpencodeVersion())
+            assertTrue("Should detect upgrade needed from 1.19.6 to 2.3.2", paths.needsOpencodeUpgrade("2.3.2"))
+            assertFalse("Should not need upgrade when versions match", paths.needsOpencodeUpgrade("1.19.6"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }

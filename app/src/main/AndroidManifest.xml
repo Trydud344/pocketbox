@@ -14,6 +14,7 @@
 
     <queries>
         <!-- Detect known OpenCode client apps so we can offer a launch button. -->
+        <package android:name="ai.opencode.mobilecode" />
         <package android:name="cc.agentlabs.opencode" />
         <package android:name="app.getopencode" />
     </queries>
@@ -21,6 +22,7 @@
     <application
         android:name=".PocketboxApp"
         android:allowBackup="false"
+        android:allowNativeHeapPointerTagging="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"

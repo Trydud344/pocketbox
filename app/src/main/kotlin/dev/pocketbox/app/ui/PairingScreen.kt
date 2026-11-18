@@ -67,6 +67,7 @@ fun qrBitmap(content: String, size: Int = 512): Bitmap {
 
 /** Known client apps we can try to open (manifest <queries>). */
 private val CLIENT_PACKAGES = listOf(
+    "ai.opencode.mobilecode",
     "cc.agentlabs.opencode",
     "app.getopencode",
 )

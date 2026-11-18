@@ -98,7 +98,11 @@ object TarExtractor {
 
     private fun normalizeInside(from: String, target: String): String {
         // Best-effort resolution for the symlink-fallback copy path.
-        val baseParts = from.split('/').dropLast(1).toMutableList()
+        val baseParts = if (target.startsWith("/")) {
+            mutableListOf()
+        } else {
+            from.split('/').dropLast(1).toMutableList()
+        }
         for (part in target.split('/')) {
             when (part) {
                 "", "." -> {}

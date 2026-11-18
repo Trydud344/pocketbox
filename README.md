@@ -23,11 +23,11 @@ Milestone 0 (feasibility) facts were verified on 2026-11-17 against upstream
 sources and the actual binaries — see `docs/DECISIONS.md` for the numbers and
 routes, including:
 
-- OpenCode **v1.19.6** musl binary runs inside the Alpine 3.24.4 userland once
-  `libgcc`/`libstdc++` are present (verified: `/global/health` →
-  `{"healthy":true,"version":"1.19.6"}`).
-- The v2 line (2.3.0) also runs; its API moved to `/api/*` with `GET /api/info`
-  and `POST /api/pair`. The supervisor health check supports both.
+- OpenCode **v2.3.2** musl binary runs inside the Alpine 3.24.4 userland once
+  `libgcc`/`libstdc++` are present (`GET /api/info` and `POST /api/pair` satisfy
+  the OpenCode V2 client contract required by the OpenCode mobile app).
+- Legacy v1 (`1.19.6`, `/global/health`) is also supported by the supervisor
+  health check, and existing v1 installations are upgraded in-place to v2.3.2.
 
 ## Repo layout
 

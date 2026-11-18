@@ -488,7 +488,7 @@ int main(int argc, char *const argv[])
     status = launch_process(tracee, &argv[status]);
     if (status < 0) {
 	print_execve_help(tracee, tracee->exe, status);
-	goto error;
+	_exit(EXIT_FAILURE);
     }
 
     /* Start tracing the first tracee and all its children.  */

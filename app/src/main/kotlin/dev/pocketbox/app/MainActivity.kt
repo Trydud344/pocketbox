@@ -53,33 +53,55 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun PocketboxUi(container: dev.pocketbox.app.AppContainer) {
     var screen by remember { mutableStateOf(MainActivity.Screen.DASHBOARD) }
+    val targetVersion = remember {
+        container.manifest.forAbi(RuntimePaths.deviceAbi())?.opencode?.version
+    }
+    var isInstalled by remember {
+        mutableStateOf(
+            container.paths.installed() && !container.paths.needsOpencodeUpgrade(targetVersion)
+        )
+    }
     val status by container.supervisor.status.collectAsState()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    // Mark installed if we already have state (e.g. app restart while installed).
-    // We do not auto-start the server here: the user controls Start/Stop (or the
-    // QS tile / boot receiver). After setup completes, the setup flow starts it.
+    // Mark installed if we already have state and the installed OpenCode version matches
+    // the pinned V2 manifest version. If an older version (e.g. v1.x) is installed,
+    // stop any running server and route through SetupScreen to upgrade OpenCode in-place.
     LaunchedEffect(Unit) {
-        if (container.paths.installed()) {
-            container.supervisor.markInstalled(
-                container.manifest.forAbi(RuntimePaths.deviceAbi())?.opencode?.version
-            )
-            // Ensure guest DNS matches user setting.
-            container.installer.applyDns(container.settings.dns.value)
+        val installedNow = container.paths.installed()
+        val needsUpgrade = container.paths.needsOpencodeUpgrade(targetVersion)
+        if (installedNow && needsUpgrade) {
+            container.supervisor.stop()
+            ServerService.stop(context)
+            container.supervisor.markNotInstalled()
+            isInstalled = false
+        } else {
+            isInstalled = installedNow
+            if (installedNow) {
+                container.supervisor.markInstalled(
+                    container.paths.installedOpencodeVersion() ?: targetVersion
+                )
+                // Ensure guest DNS matches user setting.
+                container.installer.applyDns(container.settings.dns.value)
+            }
         }
     }
 
     when (screen) {
         MainActivity.Screen.DASHBOARD -> {
-            if (status.state == ServerState.NOT_INSTALLED && !container.paths.installed()) {
-                SetupScreen(installer = container.installer, onComplete = {
-                    container.credentials.ensureCredentials()
-                    container.supervisor.markInstalled(
-                        container.manifest.forAbi(RuntimePaths.deviceAbi())?.opencode?.version
-                    )
-                    scope.launch { ServerService.start(context) }
-                })
+            if (!isInstalled && status.state == ServerState.NOT_INSTALLED) {
+                SetupScreen(
+                    installer = container.installer,
+                    currentVersion = container.paths.installedOpencodeVersion(),
+                    targetVersion = targetVersion,
+                    onComplete = {
+                        isInstalled = true
+                        container.supervisor.markInstalled(targetVersion)
+                        runCatching { container.credentials.ensureCredentials() }
+                        scope.launch { ServerService.start(context) }
+                    },
+                )
             } else {
                 DashboardScreen(
                     status = status,
@@ -120,6 +142,8 @@ private fun PocketboxUi(container: dev.pocketbox.app.AppContainer) {
                     container.supervisor.stop()
                     ServerService.stop(context)
                     container.paths.wipe()
+                    container.supervisor.markNotInstalled()
+                    isInstalled = false
                     screen = MainActivity.Screen.DASHBOARD
                 }
             },

@@ -5,6 +5,7 @@ To be filled during Milestone 0 on real devices. A client must:
 
 | Client | Package ID | Version | Cleartext loopback | Basic auth | SSE | Session create | Tool call | Result |
 |--------|------------|---------|--------------------|-----------|-----|----------------|-----------|--------|
+| OpenCode Mobile (official) | `ai.opencode.mobilecode` | 0.8.0 (380) | YES | YES | YES | YES | YES | Requires OpenCode v2 contract (`/api/info`) |
 | OpenCode Mobile (community) | `cc.agentlabs.opencode` | — | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | |
 | OpenCode Mobile (Play) | `app.getopencode` | — | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | |
 | OConnector | (APK) | — | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | |

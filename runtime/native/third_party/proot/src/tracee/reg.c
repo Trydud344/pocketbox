@@ -309,12 +309,13 @@ int push_regs(Tracee *tracee)
 
 #if defined(ARCH_ARM64)
 	struct iovec regs;
-	word_t current_sysnum = REG(tracee, CURRENT, SYSARG_NUM);
+	int current_sysnum = (int) REG(tracee, CURRENT, SYSARG_NUM);
 
 	/* Update syscall number if needed.  On arm64, a new
 	 * subcommand has been added to PTRACE_{S,G}ETREGSET
-	 * to allow write/read of current sycall number.  */
-	if (current_sysnum != REG(tracee, ORIGINAL, SYSARG_NUM)) {
+	 * to allow write/read of current sycall number.
+	 * Note: kernel arm64 syscall_set() expects a 32-bit int (sizeof(int) == 4). */
+	if ((word_t) current_sysnum != REG(tracee, ORIGINAL, SYSARG_NUM)) {
 	    regs.iov_base = &current_sysnum;
 	    regs.iov_len = sizeof(current_sysnum);
 	    status =

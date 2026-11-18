@@ -11,16 +11,18 @@ import androidx.compose.ui.unit.dp
 import dev.pocketbox.runtime.install.InstallEvent
 import dev.pocketbox.runtime.install.InstallPhase
 import dev.pocketbox.runtime.install.InstallStep
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 @Composable
 fun SetupScreen(
     installer: dev.pocketbox.runtime.install.Installer,
+    currentVersion: String? = null,
+    targetVersion: String? = null,
     onComplete: () -> Unit,
 ) {
+    val isUpgrade = currentVersion != null && targetVersion != null && currentVersion != targetVersion
+    val scope = rememberCoroutineScope()
     var phase by remember { mutableStateOf(InstallPhase.IDLE) }
     var step by remember { mutableStateOf<InstallStep?>(null) }
     var stepIndex by remember { mutableIntStateOf(0) }
@@ -34,9 +36,9 @@ fun SetupScreen(
         error = null
         phase = InstallPhase.RUNNING
         log = ""
-        job = CoroutineScope(Dispatchers.IO).launch {
+        job = scope.launch {
             try {
-                installer.install().collectLatest { ev ->
+                installer.install().collect { ev ->
                     when (ev) {
                         is InstallEvent.StepChanged -> {
                             step = ev.step
@@ -58,10 +60,18 @@ fun SetupScreen(
                         }
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 error = e.message ?: e.javaClass.simpleName
                 phase = InstallPhase.FAILED
             }
+        }
+    }
+
+    LaunchedEffect(isUpgrade) {
+        if (isUpgrade && phase == InstallPhase.IDLE) {
+            start()
         }
     }
 
@@ -72,12 +82,21 @@ fun SetupScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Set up your Pocketbox", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "This will download and install a private OpenCode server that runs entirely on this device:\n" +
-                "• Alpine Linux base (~4 MB)\n" +
-                "• OpenCode (~80 MB) + tools (git, ripgrep, curl, ssh)\n\n" +
-                "Everything stays on your phone. A random password is generated for the local server.",
+            if (isUpgrade) "Update OpenCode to v$targetVersion" else "Set up your Pocketbox",
+            style = MaterialTheme.typography.headlineMedium,
+        )
+        Text(
+            if (isUpgrade) {
+                "Your installed OpenCode server (v$currentVersion) needs to be updated to v$targetVersion " +
+                    "for the OpenCode V2 client contract.\n\n" +
+                    "Your existing Alpine container, projects, and credentials will be kept intact."
+            } else {
+                "This will download and install a private OpenCode V2 server that runs entirely on this device:\n" +
+                    "• Alpine Linux base (~4 MB)\n" +
+                    "• OpenCode v${targetVersion ?: "2.3.2"} (~120 MB) + tools (git, ripgrep, curl, ssh)\n\n" +
+                    "Everything stays on your phone. A random password is generated for the local server."
+            },
             style = MaterialTheme.typography.bodyMedium,
         )
 
@@ -108,7 +127,14 @@ fun SetupScreen(
 
         if (phase == InstallPhase.IDLE) {
             Button(onClick = { start() }, modifier = Modifier.fillMaxWidth()) {
-                Text("Set up now")
+                Text(if (isUpgrade) "Update OpenCode now" else "Set up now")
+            }
+        }
+
+        if (phase == InstallPhase.DONE) {
+            Text("Setup complete. Opening dashboard…", style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = { onComplete() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Open Dashboard")
             }
         }
 

@@ -82,10 +82,10 @@ BUILD_H="$WORK/build.h"
   echo '#ifndef BUILD_H'
   echo '#define BUILD_H'
   echo '#define VERSION "5.4.0-pocketbox"'
-  if $CC --target=$TARGET -o "$WORK/.check_process_vm" "$WORK/.check_process_vm.c" 2>/dev/null; then
+  if $CC --target=$TARGET -D_GNU_SOURCE -o "$WORK/.check_process_vm" "$WORK/.check_process_vm.c" 2>/dev/null; then
     echo '#define HAVE_PROCESS_VM'
   fi
-  if $CC --target=$TARGET -o "$WORK/.check_seccomp_filter" "$WORK/.check_seccomp_filter.c" 2>/dev/null; then
+  if $CC --target=$TARGET -D_GNU_SOURCE -o "$WORK/.check_seccomp_filter" "$WORK/.check_seccomp_filter.c" 2>/dev/null; then
     echo '#define HAVE_SECCOMP_FILTER'
   fi
   echo '#endif'

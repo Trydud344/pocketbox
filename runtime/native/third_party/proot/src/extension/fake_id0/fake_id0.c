@@ -71,6 +71,7 @@ static FilteredSysnum filtered_sysnums[] = {
     { PR_execve, FILTER_SYSEXIT },
     { PR_fchmod, FILTER_SYSEXIT },
     { PR_fchmodat, FILTER_SYSEXIT },
+    { PR_fchmodat2, FILTER_SYSEXIT },
     { PR_fchown, FILTER_SYSEXIT },
     { PR_fchown32, FILTER_SYSEXIT },
     { PR_fchownat, FILTER_SYSEXIT },
@@ -191,6 +192,7 @@ static void override_permissions(const Tracee *tracee, const char *path,
 	    break;
 
 	case PR_fchmodat:
+	case PR_fchmodat2:
 	    node->mode = peek_reg(tracee, ORIGINAL, SYSARG_3);
 	    break;
 
@@ -301,6 +303,10 @@ static int handle_sysenter_end(Tracee *tracee, const Config *config)
 
     case PR_setgroups:
     case PR_setgroups32:
+	if (config->euid == 0)
+	    set_sysnum(tracee, PR_void);
+	return 0;
+
     case PR_getgroups:
     case PR_getgroups32:
 	/* TODO */
@@ -583,10 +589,15 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
 	POKE_MEM_ID(SYSARG_3, sgid);
 	return 0;
 
-    case PR_setdomainname:
-    case PR_sethostname:
     case PR_setgroups:
     case PR_setgroups32:
+	if (config->euid == 0 && get_sysnum(tracee, MODIFIED) == PR_void) {
+	    poke_reg(tracee, SYSARG_RESULT, 0);
+	    return 0;
+	}
+	/* Fall through.  */
+    case PR_setdomainname:
+    case PR_sethostname:
     case PR_mknod:
     case PR_mknodat:
     case PR_capset:
@@ -602,6 +613,7 @@ static int handle_sysexit_end(Tracee *tracee, Config *config)
     case PR_fchown32:
     case PR_lchown32:
     case PR_fchmodat:
+    case PR_fchmodat2:
     case PR_fchownat:{
 	    word_t result;
 

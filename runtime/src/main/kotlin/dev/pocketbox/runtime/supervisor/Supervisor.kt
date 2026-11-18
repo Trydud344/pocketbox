@@ -58,9 +58,13 @@ class Supervisor(
     @Volatile private var userStop = false
 
     fun markInstalled(version: String?) {
-        if (_status.value.state == ServerState.NOT_INSTALLED) {
+        if (_status.value.state == ServerState.NOT_INSTALLED || _status.value.state == ServerState.INSTALLING) {
             _status.value = _status.value.copy(state = ServerState.STOPPED, version = version)
         }
+    }
+
+    fun markNotInstalled() {
+        _status.value = RuntimeStatus(state = ServerState.NOT_INSTALLED)
     }
 
     fun markInstalling() {
@@ -91,9 +95,7 @@ class Supervisor(
 
         // Port collision: try to bind before spawning.
         val chosenPort = freePortOr(port)
-        if (chosenPort != port) {
-            _status.value = _status.value.copy(port = chosenPort)
-        }
+        _status.value = _status.value.copy(port = chosenPort)
 
         val argv = PRootOneShot.buildArgv(
             paths = paths,

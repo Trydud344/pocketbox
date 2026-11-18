@@ -359,6 +359,16 @@ translate_path(Tracee *tracee, char result[PATH_MAX], int dir_fd,
 	 * Remove the leading "root" part of the base (required!).
 	 */
 	status = detranslate_path(tracee, result, NULL);
+	if (status == -EPERM) {
+	    /* On Android, /proc/<pid>/fd/<dir_fd> may report an alias path
+	     * (e.g. /data/user/0/...) while get_root() was canonicalized via
+	     * realpath() (e.g. /data/data/...), or vice versa. */
+	    char resolved[PATH_MAX];
+	    if (realpath(result, resolved) != NULL) {
+		strcpy(result, resolved);
+		status = detranslate_path(tracee, result, NULL);
+	    }
+	}
 	if (status < 0)
 	    return status;
     }

@@ -20,10 +20,10 @@ class RuntimeManifestTest {
             "sizeBytes": 4029843
           },
           "opencode": {
-            "version": "1.19.6",
-            "url": "https://github.com/anomalyco/opencode/releases/download/v1.19.6/opencode-linux-arm64-musl.tar.gz",
-            "sha256": "45407388777dfc1894591c9727c169f202ad92c75757038950630a0fbb12ca97",
-            "sizeBytes": 78461019
+            "version": "2.3.2",
+            "url": "https://github.com/anomalyco/opencode/releases/download/v2.3.2/opencode-linux-arm64-musl.tar.gz",
+            "sha256": "2148ba748f5410177868ed67d59ef70626cb6bd4fb2abc5177c807adfdc24fc3",
+            "sizeBytes": 120472892
           }
         },
         "x86_64": {
@@ -34,10 +34,10 @@ class RuntimeManifestTest {
             "sizeBytes": 3704088
           },
           "opencode": {
-            "version": "1.19.6",
-            "url": "https://github.com/anomalyco/opencode/releases/download/v1.19.6/opencode-linux-x64-musl.tar.gz",
-            "sha256": "2a22da39d0b69681272f4daeb51316244eda5c3d606d9e507d61bbf5c1b868a2",
-            "sizeBytes": 79891356
+            "version": "2.3.2",
+            "url": "https://github.com/anomalyco/opencode/releases/download/v2.3.2/opencode-linux-x64-musl.tar.gz",
+            "sha256": "4e952a67874cfdb4f53eeae5840f9813acc9f109c10e61bc26020271f56d7d84",
+            "sizeBytes": 122453192
           }
         }
       },
@@ -67,9 +67,9 @@ class RuntimeManifestTest {
         )
         assertEquals(4029843L, arm64.alpine.sizeBytes)
 
-        assertEquals("1.19.6", arm64.opencode.version)
+        assertEquals("2.3.2", arm64.opencode.version)
         assertEquals(
-            "45407388777dfc1894591c9727c169f202ad92c75757038950630a0fbb12ca97",
+            "2148ba748f5410177868ed67d59ef70626cb6bd4fb2abc5177c807adfdc24fc3",
             arm64.opencode.sha256,
         )
 

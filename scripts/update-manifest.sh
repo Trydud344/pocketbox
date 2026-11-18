@@ -41,9 +41,10 @@ fetch_alpine() {
 }
 
 # --- OpenCode -------------------------------------------------------------
-# OpenCode "latest" GitHub release (release track; see docs/DECISIONS.md D1).
-TAG=$(curl -fsSL https://api.github.com/repos/anomalyco/opencode/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
-say "OpenCode latest tag: $TAG"
+# OpenCode latest v2 GitHub release (v2 contract required by OpenCode mobile clients).
+TAG=$(curl -fsSL "https://api.github.com/repos/anomalyco/opencode/releases?per_page=20" \
+  | grep -o '"tag_name": *"v2\.[^"]*"' | head -1 | cut -d'"' -f4)
+say "OpenCode latest v2 tag: $TAG"
 VER=${TAG#v}
 
 fetch_opencode() {

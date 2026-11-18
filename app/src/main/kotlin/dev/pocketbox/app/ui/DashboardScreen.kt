@@ -33,6 +33,7 @@ fun DashboardScreen(
     val context = LocalContext.current
     val installedClients = remember {
         listOf(
+            "ai.opencode.mobilecode",
             "cc.agentlabs.opencode",
             "app.getopencode",
         ).filter {

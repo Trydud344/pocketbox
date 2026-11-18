@@ -506,8 +506,9 @@ int translate_syscall_enter(Tracee *tracee)
     case PR_faccessat2:
     case PR_futimesat:
     case PR_mknodat:
-	flags = syscall_number == PR_fchmodat2
-	    ? peek_reg(tracee, CURRENT, SYSARG_3)
+	flags = (syscall_number == PR_fchmodat2
+		 || syscall_number == PR_faccessat2)
+	    ? peek_reg(tracee, CURRENT, SYSARG_4)
 	    : 0;
 	dirfd = peek_reg(tracee, CURRENT, SYSARG_1);
 
