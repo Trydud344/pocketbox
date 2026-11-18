@@ -72,8 +72,12 @@ class AppContainer(private val app: Application) {
             manifest = manifest,
             wifiOnly = { settings.wifiOnly.value },
             onMetered = {
-                val cm = app.getSystemService(android.net.ConnectivityManager::class.java)
-                cm?.isActiveNetworkMetered == true
+                try {
+                    val cm = app.getSystemService(android.net.ConnectivityManager::class.java)
+                    cm?.isActiveNetworkMetered == true
+                } catch (_: SecurityException) {
+                    false
+                }
             },
         )
     }
