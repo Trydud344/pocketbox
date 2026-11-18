@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pocketbox</string>
+    <string name="tile_label">Pocketbox server</string>
+    <string name="notif_channel_status">Server status</string>
+    <string name="notif_channel_status_desc">Shows when the local OpenCode server is running</string>
+    <string name="notif_channel_errors">Errors</string>
+    <string name="notif_channel_errors_desc">Alerts when the server fails</string>
+    <string name="disclaimer">Not affiliated with or endorsed by OpenCode or any AI provider. Bring your own provider access.</string>
+</resources>

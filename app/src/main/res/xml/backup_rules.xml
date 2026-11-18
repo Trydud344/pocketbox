@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="root" path="rootfs/" />
+    <exclude domain="root" path="logs/" />
+    <exclude domain="root" path="fake_proc/" />
+    <exclude domain="root" path="runtime-state.json" />
+</full-backup-content>

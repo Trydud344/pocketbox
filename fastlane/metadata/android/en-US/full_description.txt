@@ -1,0 +1,18 @@
+Pocketbox hosts a private OpenCode server on your Android phone, inside an Alpine Linux userland (via PRoot, no root required). Connect to it from the same device with your favorite OpenCode remote-access client at http://127.0.0.1:4096.
+
+FEATURES
+• One-tap setup: downloads and checksum-verifies the pinned Alpine rootfs and OpenCode binary
+• Always-on server via a foreground service with supervision and automatic restart
+• Loopback-only binding with a mandatory randomly generated password
+• Pairing screen: copy URL/username/password (sensitive clipboard), QR for other devices
+• Built-in tools: git, ripgrep, curl, ssh, optional node/python packs
+• Logs, diagnostics (pb-doctor), bounded one-shot command runner
+• Quick Settings tile, start on boot, battery-optimization exemption
+
+PRIVACY
+• No telemetry, no analytics, no ads — ever
+• Downloads only from pinned HTTPS URLs with pinned SHA-256 checksums
+• Everything runs in the app's private sandbox on your device
+
+DISCLAIMER
+Pocketbox is not affiliated with or endorsed by OpenCode or any AI provider. Bring your own provider access. OpenCode is a product of its respective authors.

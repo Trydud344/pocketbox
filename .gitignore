@@ -1,0 +1,15 @@
+# Gradle
+.gradle/
+build/
+app/build/
+runtime/build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Native build artifacts are produced by runtime/native/build-proot-android.sh
+# and copied into jniLibs by the Gradle task; don't commit generated copies.
+app/build/generated/
