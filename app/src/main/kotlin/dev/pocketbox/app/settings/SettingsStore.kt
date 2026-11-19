@@ -31,6 +31,7 @@ class SettingsStore(private val context: Context) {
         val DNS = stringPreferencesKey("dns")
         val BIND_LAN = booleanPreferencesKey("bind_lan")
         val NO_SECCOMP = booleanPreferencesKey("no_seccomp")
+        val ANDROID_STORAGE_ENABLED = booleanPreferencesKey("android_storage_enabled")
     }
 
     // Snapshot values for synchronous access from non-suspend code.
@@ -41,6 +42,7 @@ class SettingsStore(private val context: Context) {
     private val _dns = MutableStateFlow(DEFAULT_DNS)
     private val _bindLan = MutableStateFlow(false)
     private val _noSeccomp = MutableStateFlow(false)
+    private val _androidStorageEnabled = MutableStateFlow(false)
 
     init {
         scope.launch {
@@ -52,6 +54,7 @@ class SettingsStore(private val context: Context) {
             _dns.value = p[Keys.DNS] ?: DEFAULT_DNS
             _bindLan.value = p[Keys.BIND_LAN] ?: false
             _noSeccomp.value = p[Keys.NO_SECCOMP] ?: false
+            _androidStorageEnabled.value = p[Keys.ANDROID_STORAGE_ENABLED] ?: false
         }
     }
 
@@ -62,12 +65,15 @@ class SettingsStore(private val context: Context) {
     val dns get() = _dns
     val bindLan get() = _bindLan
     val noSeccomp get() = _noSeccomp
+    val androidStorageEnabled get() = _androidStorageEnabled
 
     val portFlow: Flow<Int> = context.dataStore.data.map { it[Keys.PORT] ?: 4096 }
     val wifiOnlyFlow: Flow<Boolean> = context.dataStore.data.map { it[Keys.WIFI_ONLY] ?: true }
     val dnsFlow: Flow<String> = context.dataStore.data.map { it[Keys.DNS] ?: DEFAULT_DNS }
     val bindLanFlow: Flow<Boolean> = context.dataStore.data.map { it[Keys.BIND_LAN] ?: false }
     val noSeccompFlow: Flow<Boolean> = context.dataStore.data.map { it[Keys.NO_SECCOMP] ?: false }
+    val androidStorageEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.ANDROID_STORAGE_ENABLED] ?: false }
 
     companion object {
         const val DEFAULT_DNS = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n"
@@ -106,5 +112,10 @@ class SettingsStore(private val context: Context) {
     fun setNoSeccomp(value: Boolean) {
         _noSeccomp.value = value
         scope.launch { context.dataStore.edit { it[Keys.NO_SECCOMP] = value } }
+    }
+
+    fun setAndroidStorageEnabled(value: Boolean) {
+        _androidStorageEnabled.value = value
+        scope.launch { context.dataStore.edit { it[Keys.ANDROID_STORAGE_ENABLED] = value } }
     }
 }

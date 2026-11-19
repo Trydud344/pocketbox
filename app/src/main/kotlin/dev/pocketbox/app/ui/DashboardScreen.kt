@@ -89,6 +89,7 @@ fun DashboardScreen(
         InfoCard("Server") {
             InfoLine("Address", "http://127.0.0.1:${status.port}")
             InfoLine("OpenCode", status.version ?: "—")
+            InfoLine("Storage", status.androidStoragePath ?: "Off")
             status.startedAt?.let {
                 InfoLine("Uptime", formatUptime(System.currentTimeMillis() - it))
             }

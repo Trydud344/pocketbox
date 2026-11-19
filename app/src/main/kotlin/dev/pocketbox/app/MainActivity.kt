@@ -18,6 +18,7 @@ import dev.pocketbox.app.ui.SettingsScreen
 import dev.pocketbox.app.ui.SetupScreen
 import dev.pocketbox.runtime.install.RuntimePaths
 import dev.pocketbox.runtime.supervisor.ServerState
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -84,6 +85,8 @@ private fun PocketboxUi(container: dev.pocketbox.app.AppContainer) {
                 )
                 // Ensure guest DNS matches user setting.
                 container.installer.applyDns(container.settings.dns.value)
+                // Keep Android storage mountpoint and AGENTS.md hint in sync with permission state.
+                container.syncAndroidStorageConfig(container.settings.androidStorageEnabledFlow.first())
             }
         }
     }
@@ -135,6 +138,10 @@ private fun PocketboxUi(container: dev.pocketbox.app.AppContainer) {
             status = status,
             manifestVersion = container.manifest.forAbi(RuntimePaths.deviceAbi())?.opencode?.version ?: "?",
             onApplyDns = { dns -> container.installer.applyDns(dns) },
+            onSyncStorageConfig = { enabled ->
+                scope.launch { container.syncAndroidStorageConfig(enabled) }
+            },
+            onRestartServer = { ServerService.start(context, ServerService.ACTION_RESTART) },
             onBack = { screen = MainActivity.Screen.DASHBOARD },
             onOpenRunCommand = { screen = MainActivity.Screen.RUNCOMMAND },
             onResetRuntime = {
@@ -151,6 +158,9 @@ private fun PocketboxUi(container: dev.pocketbox.app.AppContainer) {
         MainActivity.Screen.RUNCOMMAND -> dev.pocketbox.app.ui.RunCommandScreen(
             paths = container.paths,
             abi = RuntimePaths.deviceAbi(),
+            extraBindsProvider = { container.activeBindMounts() },
+            guestEnvProvider = { binds -> container.activeGuestEnv(binds) },
+            hostEnvProvider = { container.activeHostEnv() },
             onBack = { screen = MainActivity.Screen.SETTINGS },
         )
     }

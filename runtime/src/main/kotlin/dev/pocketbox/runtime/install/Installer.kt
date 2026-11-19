@@ -100,11 +100,11 @@ class Installer(
         emit(InstallEvent.StepChanged(InstallStep.EXTRACT_ROOTFS, 3, steps.size))
         if (!paths.rootfsExtracted()) {
             val archive = alpineFile ?: throw InstallException("Alpine archive missing")
-            paths.rootfsStaging.deleteRecursively()
+            RuntimePaths.deleteRecursivelyNoFollow(paths.rootfsStaging)
             paths.rootfsStaging.mkdirs()
             emit(InstallEvent.Log("Extracting ${archive.name} ..."))
             TarExtractor.extractTarGz(archive, paths.rootfsStaging)
-            paths.rootfs.deleteRecursively()
+            RuntimePaths.deleteRecursivelyNoFollow(paths.rootfs)
             if (!paths.rootfsStaging.renameTo(paths.rootfs)) {
                 throw InstallException("Could not move staging rootfs into place")
             }
@@ -428,6 +428,11 @@ class Installer(
             echo "rg:       $(rg --version 2>&1 | head -1 || echo missing)"
             echo "curl:     $(curl --version 2>&1 | head -1 || echo missing)"
             echo "disk:     $(df -h /root 2>/dev/null | tail -1)"
+            if [ -n "${'$'}ANDROID_STORAGE" ] && [ -d "${'$'}ANDROID_STORAGE" ]; then
+              echo "storage:  mounted at ${'$'}ANDROID_STORAGE ($(ls -1 "${'$'}ANDROID_STORAGE" 2>/dev/null | wc -l) entries)"
+            else
+              echo "storage:  not mounted"
+            fi
             echo "dns:      $(nslookup opencode.ai 2>&1 | tail -2 | head -1 || echo failed)"
             echo "date:     $(date 2>&1)"
         """.trimIndent()

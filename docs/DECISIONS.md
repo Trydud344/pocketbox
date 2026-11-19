@@ -18,6 +18,7 @@ Per the project brief (section 0): defaults were followed unless noted here.
 | D12 | Credentials stored via EncryptedSharedPreferences (Keystore master key) | Brief 9.2; security-crypto 1.1.0-alpha06 is the current stable-ish artifact. | 2026-11-17 |
 | D13 | Backup/restore implemented as `/root` tar.gz export/import via SAF | Brief 10/M4: covers projects, OpenCode config/auth, dotfiles. Restores into staging then replaces `/root` contents; archive contains API keys (user warned). | 2026-11-17 |
 | D14 | LAN bind (`--hostname 0.0.0.0`), DNS override, and `PROOT_NO_SECCOMP` exposed in Settings | Brief 7.4/8.2.5/9.1: LAN mode is opt-in with persistent warning and requires server restart; DNS is written to guest `/etc/resolv.conf`; `PROOT_NO_SECCOMP=1` passed to the proot host env for compatibility. | 2026-11-17 |
+| D15 | Opt-in Android shared internal storage mounted at `/sdcard` via PRoot `-b` | Live POSIX access to Documents, Photos, Downloads, etc. on Android 11+ requires `MANAGE_EXTERNAL_STORAGE` (sideload/F-Droid; legacy external storage on API 29). Exposes `ANDROID_STORAGE=/sdcard` in guest env, syncs a marker-delimited block in `~/.config/opencode/AGENTS.md`, and hardens `RuntimePaths.wipe()` + `BackupManager` with non-following `Files.walkFileTree` so symlinks into `/sdcard` can never cause data loss. | 2026-11-19 |
 
 ## OpenCode API facts verified against the running binary (2026-11-17)
 

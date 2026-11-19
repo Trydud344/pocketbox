@@ -1,5 +1,7 @@
 package dev.pocketbox.runtime.supervisor
 
+import dev.pocketbox.runtime.install.AndroidStorageConfig
+import dev.pocketbox.runtime.install.BindMount
 import dev.pocketbox.runtime.install.NativeLibs
 import dev.pocketbox.runtime.install.PRootOneShot
 import dev.pocketbox.runtime.install.RuntimePaths
@@ -25,6 +27,7 @@ data class RuntimeStatus(
     val errorMessage: String? = null,
     val restartCount: Int = 0,
     val memoryUsageBytes: Long? = null,
+    val androidStoragePath: String? = null,
 ) {
     companion object { const val DEFAULT_PORT = 4096 }
 }
@@ -41,6 +44,7 @@ class Supervisor(
     private val portProvider: suspend () -> Int,
     private val bindHostProvider: suspend () -> String = { "127.0.0.1" },
     private val hostEnvProvider: suspend () -> Map<String, String> = { emptyMap() },
+    private val extraBindsProvider: suspend () -> List<BindMount> = { emptyList() },
 ) {
     private val _status = MutableStateFlow(RuntimeStatus())
     val status: StateFlow<RuntimeStatus> = _status
@@ -97,16 +101,27 @@ class Supervisor(
         val chosenPort = freePortOr(port)
         _status.value = _status.value.copy(port = chosenPort)
 
+        val extraBinds = extraBindsProvider()
+        AndroidStorageConfig.prepareMountPoints(paths, extraBinds)
+        val sdcardMount = extraBinds.firstOrNull { it.guestPath == AndroidStorageConfig.GUEST_SDCARD_PATH }
+        AndroidStorageConfig.syncAgentInstructions(paths, sdcardMount?.guestPath)
+
+        val guestEnv = buildMap {
+            put("OPENCODE_SERVER_USERNAME", username)
+            put("OPENCODE_SERVER_PASSWORD", password)
+            if (sdcardMount != null) {
+                put(AndroidStorageConfig.ENV_ANDROID_STORAGE, sdcardMount.guestPath)
+            }
+        }
+
         val argv = PRootOneShot.buildArgv(
             paths = paths,
             proot = proot,
             loader = loader,
             command = "/usr/local/bin/opencode serve --hostname $bindHost --port $chosenPort",
             // Credentials go into the guest environment only — never the command line.
-            guestEnv = mapOf(
-                "OPENCODE_SERVER_USERNAME" to username,
-                "OPENCODE_SERVER_PASSWORD" to password,
-            ),
+            guestEnv = guestEnv,
+            extraBinds = extraBinds,
         )
         val env = PRootOneShot.buildEnv(paths, loader, hostEnvProvider())
 
@@ -117,7 +132,8 @@ class Supervisor(
             pb.redirectErrorStream(true)
             val proc = pb.start()
             process = proc
-            logWriter.append("--- starting opencode serve on $bindHost:$chosenPort ---\n")
+            val storageDesc = sdcardMount?.let { "${it.guestPath} -> ${it.hostPath}" } ?: "disabled"
+            logWriter.append("--- starting opencode serve on $bindHost:$chosenPort (android storage: $storageDesc) ---\n")
             startLogCapture(proc)
         } catch (e: Exception) {
             fail("Failed to spawn PRoot: ${e.message}")
@@ -154,6 +170,7 @@ class Supervisor(
             version = version,
             startedAt = System.currentTimeMillis(),
             errorMessage = null,
+            androidStoragePath = sdcardMount?.guestPath,
         )
         startWatchdog(hc, username, password)
         true
@@ -182,7 +199,11 @@ class Supervisor(
                         // Crash: restart with exponential backoff.
                         noteFailure()
                         if (shouldEnterError()) return@launch
-                        _status.value = _status.value.copy(state = ServerState.BACKOFF, memoryUsageBytes = null)
+                        _status.value = _status.value.copy(
+                            state = ServerState.BACKOFF,
+                            memoryUsageBytes = null,
+                            androidStoragePath = null,
+                        )
                         stopProcess()
                         delay(backoffDelayMs())
                         if (!userStop) start()
@@ -263,7 +284,12 @@ class Supervisor(
         if (_status.value.state != ServerState.STOPPED) {
             _status.value = _status.value.copy(state = ServerState.STOPPING)
             stopProcess()
-            _status.value = _status.value.copy(state = ServerState.STOPPED, startedAt = null, memoryUsageBytes = null)
+            _status.value = _status.value.copy(
+                state = ServerState.STOPPED,
+                startedAt = null,
+                memoryUsageBytes = null,
+                androidStoragePath = null,
+            )
         }
     }
 
@@ -285,7 +311,11 @@ class Supervisor(
     }
 
     private fun fail(message: String) {
-        _status.value = _status.value.copy(state = ServerState.ERROR, errorMessage = message)
+        _status.value = _status.value.copy(
+            state = ServerState.ERROR,
+            errorMessage = message,
+            androidStoragePath = null,
+        )
     }
 
     /** Returns [port] if free, otherwise the next free port >= port. */

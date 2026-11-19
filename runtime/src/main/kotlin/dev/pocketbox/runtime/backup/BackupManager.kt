@@ -4,13 +4,21 @@ import dev.pocketbox.runtime.install.RuntimePaths
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.archivers.tar.TarConstants
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
@@ -27,26 +35,51 @@ object BackupManager {
     fun exportRoot(paths: RuntimePaths, out: OutputStream): BackupResult {
         val rootHome = File(paths.rootfs, "root")
         if (!rootHome.exists()) return BackupResult(false, "Nothing to back up (/root missing)")
+        val rootPath = rootHome.toPath()
         var count = 0L
         try {
             TarArchiveOutputStream(GZIPOutputStream(BufferedOutputStream(out))).use { tar ->
                 tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
                 tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX)
-                rootHome.walkTopDown().forEach { f ->
-                    val rel = f.toRelativeString(rootHome)
-                    if (rel.isEmpty()) return@forEach
-                    val entry = TarArchiveEntry(f, rel)
-                    if (f.isFile) {
-                        entry.size = f.length()
-                        tar.putArchiveEntry(entry)
-                        FileInputStream(f).use { it.copyTo(tar) }
-                        tar.closeArchiveEntry()
-                        count += f.length()
-                    } else if (f.isDirectory) {
-                        tar.putArchiveEntry(entry)
-                        tar.closeArchiveEntry()
-                    }
-                }
+                // Walk without following symlinks so links pointing outside rootfs
+                // (e.g. to /sdcard) are archived as symlinks, never dereferenced.
+                Files.walkFileTree(
+                    rootPath,
+                    object : SimpleFileVisitor<Path>() {
+                        override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                            if (dir == rootPath) return FileVisitResult.CONTINUE
+                            val rel = rootPath.relativize(dir).toString().replace(File.separatorChar, '/')
+                            val entry = TarArchiveEntry(dir.toFile(), "$rel/")
+                            tar.putArchiveEntry(entry)
+                            tar.closeArchiveEntry()
+                            return FileVisitResult.CONTINUE
+                        }
+
+                        override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                            val rel = rootPath.relativize(file).toString().replace(File.separatorChar, '/')
+                            if (attrs.isSymbolicLink) {
+                                val target = Files.readSymbolicLink(file).toString()
+                                val entry = TarArchiveEntry(rel, TarConstants.LF_SYMLINK)
+                                entry.linkName = target
+                                tar.putArchiveEntry(entry)
+                                tar.closeArchiveEntry()
+                            } else if (attrs.isRegularFile) {
+                                val f = file.toFile()
+                                val entry = TarArchiveEntry(f, rel)
+                                entry.size = f.length()
+                                tar.putArchiveEntry(entry)
+                                FileInputStream(f).use { it.copyTo(tar) }
+                                tar.closeArchiveEntry()
+                                count += f.length()
+                            }
+                            return FileVisitResult.CONTINUE
+                        }
+
+                        override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
+                            return FileVisitResult.CONTINUE
+                        }
+                    },
+                )
                 tar.finish()
             }
             return BackupResult(true, "Backup complete", count)
@@ -59,7 +92,7 @@ object BackupManager {
     fun importRoot(paths: RuntimePaths, input: InputStream): BackupResult {
         val rootHome = File(paths.rootfs, "root")
         val staging = File(paths.rootfs, "root.restore-staging")
-        staging.deleteRecursively()
+        RuntimePaths.deleteRecursivelyNoFollow(staging)
         staging.mkdirs()
         try {
             // Validate + extract to staging first.
@@ -86,18 +119,18 @@ object BackupManager {
             rootHome.mkdirs()
             staging.listFiles()?.forEach { child ->
                 val dest = File(rootHome, child.name)
-                if (dest.exists()) {
-                    if (dest.isDirectory) dest.deleteRecursively() else dest.delete()
+                if (Files.exists(dest.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                    RuntimePaths.deleteRecursivelyNoFollow(dest)
                 }
                 if (!child.renameTo(dest)) {
                     // cross-dir rename fallback
                     child.copyRecursively(dest, overwrite = true)
                 }
             }
-            staging.deleteRecursively()
+            RuntimePaths.deleteRecursivelyNoFollow(staging)
             return BackupResult(true, "Restore complete")
         } catch (e: Exception) {
-            staging.deleteRecursively()
+            RuntimePaths.deleteRecursivelyNoFollow(staging)
             return BackupResult(false, "Restore failed: ${e.message}")
         }
     }

@@ -71,7 +71,17 @@ mounted read-only into the guest.
 
 - Home `/root`; projects dir `/root/projects` (created on demand by the user's
   git usage; OpenCode picks the workspace the client points at).
-- `/usr/local/bin/pb-doctor` prints versions, DNS check, git test, disk, date.
+- Optional Android device storage (opt-in in Settings): when enabled and
+  permitted (`MANAGE_EXTERNAL_STORAGE` on Android 11+, legacy external storage
+  on Android 10), `Environment.getExternalStorageDirectory()` is bind-mounted at
+  `/sdcard` via `-b <externalStorage>:/sdcard`, `ANDROID_STORAGE=/sdcard` is set
+  in the guest environment, and a managed marker block is synced into
+  `/root/.config/opencode/AGENTS.md` so OpenCode discovers the mount.
+  `RuntimePaths.wipe()` and `BackupManager` walk directories without following
+  symlinks so links pointing to `/sdcard` can never delete or archive phone
+  storage.
+- `/usr/local/bin/pb-doctor` prints versions, storage mount status, DNS check,
+  git test, disk, date.
 - DNS: `/etc/resolv.conf` seeded with 1.1.1.1 / 8.8.8.8 (Android's resolver is
   not reachable from inside PRoot). Override by editing that file from the
   Run command screen.

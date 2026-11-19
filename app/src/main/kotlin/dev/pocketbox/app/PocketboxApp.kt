@@ -9,6 +9,9 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dev.pocketbox.app.server.ServerService
 import dev.pocketbox.app.settings.SettingsStore
+import dev.pocketbox.app.storage.AndroidStorageAccess
+import dev.pocketbox.runtime.install.AndroidStorageConfig
+import dev.pocketbox.runtime.install.BindMount
 import dev.pocketbox.runtime.install.Installer
 import dev.pocketbox.runtime.install.NativeLibs
 import dev.pocketbox.runtime.install.RuntimePaths
@@ -17,6 +20,8 @@ import dev.pocketbox.runtime.supervisor.Supervisor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.SecureRandom
 
@@ -88,8 +93,29 @@ class AppContainer(private val app: Application) {
         credentialsProvider = { credentials.getUsername() to credentials.getPassword() },
         portProvider = { settings.port.value },
         bindHostProvider = { if (settings.bindLan.value) "0.0.0.0" else "127.0.0.1" },
-        hostEnvProvider = { if (settings.noSeccomp.value) mapOf("PROOT_NO_SECCOMP" to "1") else emptyMap() },
+        hostEnvProvider = { activeHostEnv() },
+        extraBindsProvider = {
+            val enabled = settings.androidStorageEnabledFlow.first()
+            AndroidStorageAccess.resolveActiveBindMounts(app, enabled)
+        },
     )
+
+    fun activeBindMounts(enabled: Boolean = settings.androidStorageEnabled.value): List<BindMount> =
+        AndroidStorageAccess.resolveActiveBindMounts(app, enabled)
+
+    fun activeGuestEnv(binds: List<BindMount>): Map<String, String> =
+        AndroidStorageAccess.guestEnvFor(binds)
+
+    fun activeHostEnv(): Map<String, String> =
+        if (settings.noSeccomp.value) mapOf("PROOT_NO_SECCOMP" to "1") else emptyMap()
+
+    suspend fun syncAndroidStorageConfig(enabled: Boolean = settings.androidStorageEnabled.value) =
+        withContext(Dispatchers.IO) {
+            val binds = AndroidStorageAccess.resolveActiveBindMounts(app, enabled)
+            AndroidStorageConfig.prepareMountPoints(paths, binds)
+            val sdcard = binds.firstOrNull { it.guestPath == AndroidStorageConfig.GUEST_SDCARD_PATH }
+            AndroidStorageConfig.syncAgentInstructions(paths, sdcard?.guestPath)
+        }
 }
 
 /**

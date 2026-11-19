@@ -84,16 +84,95 @@ class RuntimePaths(
     }
 
     fun wipe() {
-        rootfsStaging.deleteRecursively()
-        rootfs.deleteRecursively()
-        fakeProc.deleteRecursively()
+        deleteRecursivelyNoFollow(rootfsStaging)
+        deleteRecursivelyNoFollow(rootfs)
+        deleteRecursivelyNoFollow(fakeProc)
         stateFile.delete()
-        logs.deleteRecursively()
-        prootTmp.deleteRecursively()
-        downloads.deleteRecursively()
+        deleteRecursivelyNoFollow(logs)
+        deleteRecursivelyNoFollow(prootTmp)
+        deleteRecursivelyNoFollow(downloads)
     }
 
     companion object {
+        /**
+         * Deletes [root] recursively without following symbolic links.
+         * Critical once the app holds external storage permissions so symlinks
+         * inside `rootfs` pointing to `/sdcard` or `/storage/emulated/0` can
+         * never delete user files on the host device.
+         */
+        fun deleteRecursivelyNoFollow(root: File) {
+            val rootPath = root.toPath()
+            if (!java.nio.file.Files.exists(rootPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return
+            if (java.nio.file.Files.isSymbolicLink(rootPath) ||
+                !java.nio.file.Files.isDirectory(rootPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            ) {
+                try {
+                    java.nio.file.Files.deleteIfExists(rootPath)
+                } catch (_: IOException) {
+                }
+                return
+            }
+            try {
+                java.nio.file.Files.walkFileTree(
+                    rootPath,
+                    object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                        override fun preVisitDirectory(
+                            dir: java.nio.file.Path,
+                            attrs: java.nio.file.attribute.BasicFileAttributes,
+                        ): java.nio.file.FileVisitResult {
+                            if (!attrs.isSymbolicLink) {
+                                val f = dir.toFile()
+                                f.setReadable(true, true)
+                                f.setWritable(true, true)
+                                f.setExecutable(true, true)
+                            }
+                            return java.nio.file.FileVisitResult.CONTINUE
+                        }
+
+                        override fun visitFile(
+                            file: java.nio.file.Path,
+                            attrs: java.nio.file.attribute.BasicFileAttributes,
+                        ): java.nio.file.FileVisitResult {
+                            try {
+                                java.nio.file.Files.deleteIfExists(file)
+                            } catch (_: IOException) {
+                            }
+                            return java.nio.file.FileVisitResult.CONTINUE
+                        }
+
+                        override fun visitFileFailed(
+                            file: java.nio.file.Path,
+                            exc: IOException,
+                        ): java.nio.file.FileVisitResult {
+                            try {
+                                if (!java.nio.file.Files.isSymbolicLink(file)) {
+                                    val f = file.toFile()
+                                    f.setReadable(true, true)
+                                    f.setWritable(true, true)
+                                    f.setExecutable(true, true)
+                                }
+                                java.nio.file.Files.deleteIfExists(file)
+                            } catch (_: IOException) {
+                            }
+                            return java.nio.file.FileVisitResult.CONTINUE
+                        }
+
+                        override fun postVisitDirectory(
+                            dir: java.nio.file.Path,
+                            exc: IOException?,
+                        ): java.nio.file.FileVisitResult {
+                            try {
+                                java.nio.file.Files.deleteIfExists(dir)
+                            } catch (_: IOException) {
+                            }
+                            return java.nio.file.FileVisitResult.CONTINUE
+                        }
+                    },
+                )
+            } catch (_: IOException) {
+            }
+        }
+
         fun deviceAbi(): String = when (Build.SUPPORTED_ABIS?.firstOrNull()) {
             "arm64-v8a" -> "arm64-v8a"
             "x86_64" -> "x86_64"

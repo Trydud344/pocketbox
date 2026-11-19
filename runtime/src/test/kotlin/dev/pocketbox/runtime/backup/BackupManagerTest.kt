@@ -1,13 +1,16 @@
 package dev.pocketbox.runtime.backup
 
 import dev.pocketbox.runtime.install.RuntimePaths
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.Files
+import java.util.zip.GZIPInputStream
 
 class BackupManagerTest {
 
@@ -56,7 +59,56 @@ class BackupManagerTest {
             assertTrue(restoredBashrc.exists())
             assertEquals("export FOO=bar", restoredBashrc.readText())
         } finally {
-            tempDir.deleteRecursively()
+            RuntimePaths.deleteRecursivelyNoFollow(tempDir)
+        }
+    }
+
+    @Test
+    fun testSymlinkToExternalStorageIsNeverFollowedByBackupOrWipe() {
+        val tempDir = Files.createTempDirectory("symlink-safety-test").toFile()
+        try {
+            val filesDir = File(tempDir, "files").apply { mkdirs() }
+            val cacheDir = File(tempDir, "cache").apply { mkdirs() }
+            val fakeExternalStorage = File(tempDir, "fake-sdcard").apply { mkdirs() }
+            val preciousPhoto = File(fakeExternalStorage, "precious.jpg").apply { writeText("photo-bytes") }
+
+            val paths = RuntimePaths(filesDir, cacheDir)
+            val rootDir = File(paths.rootfs, "root").apply { mkdirs() }
+            File(rootDir, "note.txt").writeText("inside-root")
+
+            // Create a symlink inside /root pointing to external storage
+            val phoneLink = File(rootDir, "phone").toPath()
+            Files.createSymbolicLink(phoneLink, fakeExternalStorage.toPath())
+
+            // 1. Export must NOT dereference the symlink or archive precious.jpg
+            val baos = ByteArrayOutputStream()
+            val exportResult = BackupManager.exportRoot(paths, baos)
+            assertTrue(exportResult.success)
+
+            val archivedNames = mutableListOf<String>()
+            TarArchiveInputStream(GZIPInputStream(ByteArrayInputStream(baos.toByteArray()))).use { tar ->
+                while (true) {
+                    val entry = tar.nextTarEntry ?: break
+                    archivedNames.add(entry.name)
+                }
+            }
+            assertTrue("Expected note.txt in archive", archivedNames.contains("note.txt"))
+            assertTrue("Expected symlink entry 'phone' in archive", archivedNames.contains("phone"))
+            assertFalse("Must NOT archive files behind symlink", archivedNames.any { it.contains("precious.jpg") })
+
+            // 2. Import replacing /root must NOT delete precious.jpg behind existing symlink
+            val importResult = BackupManager.importRoot(paths, ByteArrayInputStream(baos.toByteArray()))
+            assertTrue(importResult.success)
+            assertTrue("External file must survive restore", preciousPhoto.exists())
+            assertEquals("photo-bytes", preciousPhoto.readText())
+
+            // 3. RuntimePaths.wipe() must delete rootfs without touching external storage
+            paths.wipe()
+            assertFalse("rootfs should be wiped", paths.rootfs.exists())
+            assertTrue("External file must survive wipe()", preciousPhoto.exists())
+            assertEquals("photo-bytes", preciousPhoto.readText())
+        } finally {
+            RuntimePaths.deleteRecursivelyNoFollow(tempDir)
         }
     }
 }

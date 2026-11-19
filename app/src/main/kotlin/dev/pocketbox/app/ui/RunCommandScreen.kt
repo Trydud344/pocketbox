@@ -8,6 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import dev.pocketbox.runtime.install.AndroidStorageConfig
+import dev.pocketbox.runtime.install.BindMount
 import dev.pocketbox.runtime.install.PRootOneShot
 import dev.pocketbox.runtime.install.RuntimePaths
 import kotlinx.coroutines.CoroutineScope
@@ -21,7 +23,14 @@ import kotlinx.coroutines.launch
  * themselves. Not a terminal: no PTY, no interactivity, 10-minute timeout.
  */
 @Composable
-fun RunCommandScreen(paths: RuntimePaths, abi: String, onBack: () -> Unit) {
+fun RunCommandScreen(
+    paths: RuntimePaths,
+    abi: String,
+    extraBindsProvider: () -> List<BindMount> = { emptyList() },
+    guestEnvProvider: (List<BindMount>) -> Map<String, String> = { emptyMap() },
+    hostEnvProvider: () -> Map<String, String> = { emptyMap() },
+    onBack: () -> Unit,
+) {
     var command by remember { mutableStateOf("/usr/local/bin/pb-doctor") }
     var output by remember { mutableStateOf("") }
     var running by remember { mutableStateOf(false) }
@@ -57,10 +66,15 @@ fun RunCommandScreen(paths: RuntimePaths, abi: String, onBack: () -> Unit) {
                     output = ""
                     scope.launch(Dispatchers.IO) {
                         val result = try {
+                            val binds = extraBindsProvider()
+                            AndroidStorageConfig.prepareMountPoints(paths, binds)
                             PRootOneShot.exec(
                                 paths = paths,
                                 abi = abi,
                                 command = command.trim(),
+                                env = hostEnvProvider(),
+                                guestEnv = guestEnvProvider(binds),
+                                extraBinds = binds,
                             )
                         } catch (e: Exception) {
                             dev.pocketbox.runtime.install.ExecResult(-1, e.message ?: "error")

@@ -114,18 +114,7 @@ object TarExtractor {
     }
 
     private fun deleteIfExists(f: File) {
-        val path = f.toPath()
-        if (java.nio.file.Files.isSymbolicLink(path)) {
-            try {
-                java.nio.file.Files.deleteIfExists(path)
-            } catch (_: Exception) {
-                f.delete()
-            }
-        } else if (f.isDirectory) {
-            f.deleteRecursively()
-        } else {
-            f.delete()
-        }
+        RuntimePaths.deleteRecursivelyNoFollow(f)
     }
 
     private fun setPerms(f: File, mode: Int) {

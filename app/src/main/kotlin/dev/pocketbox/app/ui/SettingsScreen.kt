@@ -1,6 +1,8 @@
 package dev.pocketbox.app.ui
 
+import android.Manifest
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -11,12 +13,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.pocketbox.app.settings.SettingsStore
+import dev.pocketbox.app.storage.AndroidStorageAccess
 import dev.pocketbox.runtime.backup.BackupManager
+import dev.pocketbox.runtime.install.AndroidStorageConfig
 import dev.pocketbox.runtime.install.PRootOneShot
 import dev.pocketbox.runtime.install.RuntimePaths
 import dev.pocketbox.runtime.manifest.RuntimeManifest
 import dev.pocketbox.runtime.supervisor.RuntimeStatus
+import dev.pocketbox.runtime.supervisor.ServerState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,11 +39,14 @@ fun SettingsScreen(
     status: RuntimeStatus,
     manifestVersion: String,
     onApplyDns: (String) -> Unit,
+    onSyncStorageConfig: (Boolean) -> Unit = {},
+    onRestartServer: () -> Unit = {},
     onBack: () -> Unit,
     onOpenRunCommand: () -> Unit,
     onResetRuntime: () -> Unit,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val port by settings.port.collectAsState()
     val wifiOnly by settings.wifiOnly.collectAsState()
@@ -44,6 +55,10 @@ fun SettingsScreen(
     val dns by settings.dns.collectAsState()
     val bindLan by settings.bindLan.collectAsState()
     val noSeccomp by settings.noSeccomp.collectAsState()
+    val androidStorageEnabled by settings.androidStorageEnabled.collectAsState()
+    var hasStoragePermission by remember { mutableStateOf(AndroidStorageAccess.hasPermission(context)) }
+    var pendingStorageEnable by remember { mutableStateOf(false) }
+    var showStorageEnableWarning by remember { mutableStateOf(false) }
     var portText by remember(port) { mutableStateOf(port.toString()) }
     var dnsText by remember(dns) { mutableStateOf(dns) }
     var statusMsg by remember { mutableStateOf<String?>(null) }
@@ -52,6 +67,63 @@ fun SettingsScreen(
     var showBackupWarning by remember { mutableStateOf(false) }
     var showLicensesDialog by remember { mutableStateOf(false) }
     var pendingImportTarget by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val granted = AndroidStorageAccess.hasPermission(context)
+                hasStoragePermission = granted
+                if (pendingStorageEnable) {
+                    pendingStorageEnable = false
+                    if (granted) {
+                        settings.setAndroidStorageEnabled(true)
+                        onSyncStorageConfig(true)
+                        statusMsg = "Android storage access enabled (${AndroidStorageConfig.GUEST_SDCARD_PATH})."
+                    } else {
+                        statusMsg = "Storage permission was not granted."
+                    }
+                } else if (androidStorageEnabled && !granted) {
+                    onSyncStorageConfig(false)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants.values.all { it } && AndroidStorageAccess.hasPermission(context)
+        hasStoragePermission = granted
+        pendingStorageEnable = false
+        if (granted) {
+            settings.setAndroidStorageEnabled(true)
+            onSyncStorageConfig(true)
+            statusMsg = "Android storage access enabled (${AndroidStorageConfig.GUEST_SDCARD_PATH})."
+        } else {
+            statusMsg = "Storage permission was denied."
+        }
+    }
+
+    fun requestStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            pendingStorageEnable = true
+            val launched = AndroidStorageAccess.launchAllFilesAccessSettings(context)
+            if (!launched) {
+                pendingStorageEnable = false
+                statusMsg = "Could not open Android storage settings."
+            }
+        } else {
+            pendingStorageEnable = true
+            legacyStoragePermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                ),
+            )
+        }
+    }
 
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/gzip")
@@ -172,6 +244,56 @@ fun SettingsScreen(
             )
             try { context.startActivity(i) } catch (_: Exception) { }
         }) { Text("Request battery optimization exemption") }
+
+        HorizontalDivider()
+        Text("Device storage", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Mount Android shared internal storage (/storage/emulated/0) at /sdcard inside the Alpine container " +
+                "so the OpenCode agent can read and edit Documents, Photos, Downloads, and other files.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        SettingSwitch("Access Android device files (/sdcard)", androidStorageEnabled) { checked ->
+            if (checked) {
+                showStorageEnableWarning = true
+            } else {
+                settings.setAndroidStorageEnabled(false)
+                onSyncStorageConfig(false)
+                statusMsg = "Android storage access disabled."
+            }
+        }
+        val desiredStorageActive = androidStorageEnabled && hasStoragePermission
+        if (androidStorageEnabled && !hasStoragePermission) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Permission missing — Android All files access is not granted. " +
+                            "Grant permission to mount /sdcard in the container.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(onClick = { requestStoragePermission() }) {
+                        Text("Grant permission")
+                    }
+                }
+            }
+        } else if (desiredStorageActive) {
+            Text(
+                "Mounted at /sdcard (env: ANDROID_STORAGE=/sdcard) with agent hint in ~/.config/opencode/AGENTS.md.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (status.state == ServerState.RUNNING && (status.androidStoragePath != null) != desiredStorageActive) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Restart the server for Android storage mount changes to take effect.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(onClick = onRestartServer) {
+                        Text("Restart server")
+                    }
+                }
+            }
+        }
 
         HorizontalDivider()
         Text("Backup & restore", style = MaterialTheme.typography.titleMedium)
@@ -309,6 +431,50 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showLicensesDialog = false }) { Text("Close") }
+            },
+        )
+    }
+
+    if (showStorageEnableWarning) {
+        AlertDialog(
+            onDismissRequest = { showStorageEnableWarning = false },
+            title = { Text("Allow container access to device files?") },
+            text = {
+                Text(
+                    buildString {
+                        append(
+                            "This mounts your phone's shared internal storage (Documents, DCIM/Photos, " +
+                                "Pictures, Downloads, etc.) at /sdcard inside Alpine with live read/write access.\n\n" +
+                                "Files modified or deleted by the AI agent affect your real phone storage. " +
+                                "Pocketbox also adds a hint in ~/.config/opencode/AGENTS.md so OpenCode knows where /sdcard is."
+                        )
+                        if (!hasStoragePermission) {
+                            append(
+                                "\n\nNext, Android will ask you to grant \"All files access\" " +
+                                    "(or Storage access on Android 10) for Pocketbox."
+                            )
+                        }
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showStorageEnableWarning = false
+                        if (hasStoragePermission) {
+                            settings.setAndroidStorageEnabled(true)
+                            onSyncStorageConfig(true)
+                            statusMsg = "Android storage access enabled (${AndroidStorageConfig.GUEST_SDCARD_PATH})."
+                        } else {
+                            requestStoragePermission()
+                        }
+                    },
+                ) {
+                    Text(if (hasStoragePermission) "Enable" else "Grant permission")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStorageEnableWarning = false }) { Text("Cancel") }
             },
         )
     }

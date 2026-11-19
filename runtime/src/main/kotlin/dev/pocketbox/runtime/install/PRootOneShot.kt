@@ -17,6 +17,7 @@ object PRootOneShot {
         command: String,
         env: Map<String, String> = emptyMap(),
         guestEnv: Map<String, String> = emptyMap(),
+        extraBinds: List<BindMount> = emptyList(),
         timeoutMs: Long = 10 * 60 * 1000,
     ): ExecResult {
         val nativeDir = NativeLibs.dir()
@@ -24,7 +25,7 @@ object PRootOneShot {
         val proot = File(nativeDir, "libproot.so")
         val loader = File(nativeDir, "libproot-loader.so")
 
-        val argv = buildArgv(paths, proot, loader, command, guestEnv)
+        val argv = buildArgv(paths, proot, loader, command, guestEnv, extraBinds)
         val envp = buildEnv(paths, loader, env)
 
         val pb = ProcessBuilder(argv)
@@ -63,6 +64,7 @@ object PRootOneShot {
         loader: File,
         command: String,
         guestEnv: Map<String, String> = emptyMap(),
+        extraBinds: List<BindMount> = emptyList(),
     ): List<String> {
         val rootfs = paths.rootfs.absolutePath
         val fake = paths.fakeProc.absolutePath
@@ -81,10 +83,18 @@ object PRootOneShot {
             "-b", "$fake/uptime:/proc/uptime",
             "-b", "$fake/version:/proc/version",
             "-b", "$fake/vmstat:/proc/vmstat",
-            "-w", "/root",
-            "/usr/bin/env", "-i",
-            "HOME=/root", "USER=root", "LANG=C.UTF-8", "TMPDIR=/tmp",
-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        )
+        for (bind in extraBinds) {
+            argv.add("-b")
+            argv.add(bind.toProotArg())
+        }
+        argv.addAll(
+            listOf(
+                "-w", "/root",
+                "/usr/bin/env", "-i",
+                "HOME=/root", "USER=root", "LANG=C.UTF-8", "TMPDIR=/tmp",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            )
         )
         // Guest-side env (credentials etc.) appended to `env -i`, never the argv tail.
         for ((k, v) in guestEnv) {
